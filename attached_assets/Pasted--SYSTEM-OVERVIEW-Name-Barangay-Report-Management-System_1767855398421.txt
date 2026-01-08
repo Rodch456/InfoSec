@@ -1,0 +1,192 @@
+✅ SYSTEM OVERVIEW
+Name: Barangay Report Management System Purpose: Allow residents to submit real-time incident reports within the barangay and enable barangay management, tracking, documentation, and communication.
+👥 USER ROLES & PERMISSIONS
+1. Resident (Normal User)
+Primary capabilities:
+Create and submit incident reports
+View personal submitted reports & status history
+Receive admin inquiries for additional details
+Reply to admin inquiries with text + up to 5 images
+View memos & ordinances uploaded by barangay
+Edit their account information & password
+Restrictions:
+Can only upload images captured in real-time (blocked if selecting from gallery)
+Cannot edit a submitted report (but can add requested details)
+Cannot access logs, admin tools, or official tools
+2. Barangay Official
+Primary capabilities:
+View all resident incident reports
+Update the status of reports (e.g., Pending → In Progress → Resolved)
+Request upload of memos or ordinances (subject to Admin approval)
+View memos, ordinances and report summaries (but not generate exports)
+View their own activity logs (optional feature)
+Restrictions:
+Cannot create user accounts
+Cannot approve memo/ordinance requests
+Cannot generate logs, exports, or advanced reports
+3. Admin
+Primary capabilities:
+Full access to the system
+Account management:
+Create Barangay Official accounts
+Reset passwords
+Change role status (active/inactive)
+Report management:
+View all reports
+Update report status
+Ask for more information (follow-up questions)
+Manage memos & ordinances:
+Upload memos & ordinances directly
+Review & approve/reject submission requests from officials
+View and manage logs & generate reports:
+Complete system logs (security + actions)
+Filter logs by user, date, action type
+Export logs (CSV/PDF)
+Generate analytics & progress reports:
+Summaries (counts per status/category/priority)
+Date filters
+Export as CSV/PDF
+Restrictions:
+None (superuser)
+📦 CORE SYSTEM MODULES
+A. Incident Report Module
+Fields required:
+Category (e.g., Crime, Road Concern, Waste Management, Health, etc.)
+Description
+Priority Level (Low / Medium / High / Critical)
+Location (GPS or barangay zone)
+Real-time Photo Capture (camera-only)
+Timestamp (auto)
+Report Status Lifecycle:
+Submitted (Resident)
+Reviewed (Admin/Official)
+In Progress (Assigned)
+For Validation (Work finished, verifying)
+Resolved (Closed)
+Additional Info Workflow:
+Admin sends “Request for Additional Information”
+Resident receives notification
+Resident replies with:
+Description (text)
+Up to 5 real-time photos
+B. Memo & Ordinance Module
+Documents uploaded for residents to read.
+Document Fields:
+Title
+Description
+Category (Memo / Ordinance)
+Issued by (Official)
+Effective Date
+File Upload (PDF/Image)
+Status (Pending Approval / Approved / Rejected)
+Actions:
+Barangay Official → Upload Request (cannot publish)
+Admin → Approve/Reject + Publish Online
+Residents → View only
+C. Account & Role Management Module
+Only for Admin.
+Features:
+Add/Remove Barangay Official Accounts
+Activate/Deactivate Accounts
+Reset Passwords
+Edit Profile Details
+Fields stored per user:
+Name
+Position (if official)
+Email / Username
+Contact Number
+Role (Resident/Official/Admin)
+Status (Active/Inactive)
+D. Security Logging & Audit Module
+Logs every action.
+Log Details:
+User ID
+Role
+Action performed
+Affected data (e.g., “Updated Report #123 to Resolved”)
+Date & Timestamp
+IP Address (optional)
+Device/Browser info (optional)
+Filters:
+By user
+By date range
+By role
+By action
+By module
+Exports:
+CSV
+PDF
+E. Reporting & Analytics Module
+Available only to Admin.
+Reports Available:
+Report counts by:
+Category
+Status
+Priority
+Reports timeline visualization (optional)
+Resolution time statistics
+Response rate stats
+Export support (CSV, PDF)
+Filters:
+Date range
+Category
+Status
+Priority
+Exports contain:
+Total submitted reports
+In-progress reports
+Resolved reports
+Average handling time
+Breakdown by officials (if implemented)
+🔐 SECURITY RULES & VALIDATIONS
+Image Upload Security
+Must use camera input only (capture="camera" on mobile)
+System blocks gallery selection
+Metadata validation (EXIF timestamp for verification)
+Max size per image (configurable)
+Max images:
+Initial report: ≤ 3 images
+Reply additional info: ≤ 5 images
+Authentication
+Login with username/email + password
+Option for 2-Factor Authentication (optional)
+Session timeout & auto logout
+Role-based access control (RBAC)
+Data Protection
+Passwords hashed (e.g., bcrypt)
+Audit trails for legal purposes
+Encrypted storage for sensitive data (optional)
+🔄 WORKFLOW SUMMARY
+Resident Reporting Workflow
+Resident submits report (with real-time images)
+Admin/Official reviews
+Admin may request more info
+Resident replies with info + pictures
+Official updates status until Resolved
+Resident can view final outcome
+Memo/Ordinance Workflow
+Official submits memo/ordinance request
+Admin reviews
+If approved → visible to all residents
+If rejected → official receives reason
+📱 FRONTEND CONSIDERATIONS
+Supports:
+Mobile (Android/iOS)
+Web browser
+Mobile-specific Features:
+Camera access
+GPS location capture
+Push notifications (optional)
+💾 DATABASE NOTES (High-Level)
+Core tables (suggested):
+users
+reports
+report_images
+report_responses
+memos
+ordinances
+logs
+notifications
+settings (optional)
+
+I will use xampp for database. This is system just for local, for my computer only
