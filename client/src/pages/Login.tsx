@@ -19,7 +19,7 @@ export default function Login() {
     return <Redirect to="/dashboard" />;
   }
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
 
@@ -28,7 +28,7 @@ export default function Login() {
       return;
     }
 
-    const success = login(email, password);
+    const success = await login(email, password);
     if (success) {
       setLocation('/dashboard');
     } else {

@@ -1,5 +1,6 @@
 import { AppLayout } from '@/components/layout/AppLayout';
 import { useAuth } from '@/lib/authContext';
+import { useQuery } from '@tanstack/react-query';
 import { mockReports, mockMemos, statusLabels, priorityLabels } from '@/lib/mockData';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -58,21 +59,21 @@ function StatCard({
   );
 }
 
-function ReportRow({ report }: { report: typeof mockReports[0] }) {
+function ReportRow({ report }: { report: any }) {
   const statusClass = {
     submitted: 'status-submitted',
     reviewed: 'status-reviewed',
     in_progress: 'status-progress',
     validation: 'status-validation',
     resolved: 'status-resolved',
-  }[report.status];
+  }[report.status as keyof typeof statusLabels] || 'status-submitted';
 
   const priorityClass = {
     low: 'priority-low',
     medium: 'priority-medium',
     high: 'priority-high',
     critical: 'priority-critical',
-  }[report.priority];
+  }[report.priority as keyof typeof priorityLabels] || 'priority-low';
 
   return (
     <div
@@ -83,14 +84,14 @@ function ReportRow({ report }: { report: typeof mockReports[0] }) {
         <div className="flex items-center gap-2 mb-1">
           <span className="font-mono text-xs text-muted-foreground">{report.id}</span>
           <Badge variant="outline" className={cn('text-xs', priorityClass)}>
-            {priorityLabels[report.priority]}
+            {priorityLabels[report.priority as keyof typeof priorityLabels]}
           </Badge>
         </div>
         <p className="font-medium truncate">{report.category}</p>
         <p className="text-sm text-muted-foreground truncate">{report.location}</p>
       </div>
       <div className="flex items-center gap-3">
-        <Badge className={cn('capitalize', statusClass)}>{statusLabels[report.status]}</Badge>
+        <Badge className={cn('capitalize', statusClass)}>{statusLabels[report.status as keyof typeof statusLabels]}</Badge>
         <Link href={`/reports/${report.id}`}>
           <Button variant="ghost" size="sm" data-testid={`view-report-${report.id}`}>
             <ArrowRight className="w-4 h-4" />
@@ -106,14 +107,24 @@ export default function Dashboard() {
 
   if (!user) return null;
 
-  const userReports = user.role === 'resident'
-    ? mockReports.filter(r => r.submittedBy === user.name)
-    : mockReports;
+  const { data: reports = [] } = useQuery({
+    queryKey: ['reports', user.role, user.id],
+    queryFn: async () => {
+      const url = user.role === 'resident'
+        ? `/api/reports/user/${user.id}`
+        : '/api/reports';
+      const res = await fetch(url);
+      if (!res.ok) throw new Error('Failed to fetch reports');
+      return res.json();
+    },
+  });
 
-  const pendingCount = userReports.filter(r => r.status === 'submitted' || r.status === 'reviewed').length;
-  const inProgressCount = userReports.filter(r => r.status === 'in_progress' || r.status === 'validation').length;
-  const resolvedCount = userReports.filter(r => r.status === 'resolved').length;
-  const criticalCount = userReports.filter(r => r.priority === 'critical' && r.status !== 'resolved').length;
+  const userReports = reports;
+
+  const pendingCount = userReports.filter((r: any) => r.status === 'submitted' || r.status === 'reviewed').length;
+  const inProgressCount = userReports.filter((r: any) => r.status === 'in_progress' || r.status === 'validation').length;
+  const resolvedCount = userReports.filter((r: any) => r.status === 'resolved').length;
+  const criticalCount = userReports.filter((r: any) => r.priority === 'critical' && r.status !== 'resolved').length;
 
   const recentReports = [...userReports]
     .sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime())

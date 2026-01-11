@@ -1,7 +1,7 @@
 import { useState } from 'react';
+import { useQuery } from '@tanstack/react-query';
 import { AppLayout } from '@/components/layout/AppLayout';
 import { useAuth } from '@/lib/authContext';
-import { mockLogs } from '@/lib/mockData';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -21,10 +21,24 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table';
-import { Search, Download, Filter, Clock, User, FileText } from 'lucide-react';
+import { Search, Download, Filter, Clock, User, FileText, Loader2 } from 'lucide-react';
 import { format } from 'date-fns';
 import { useToast } from '@/hooks/use-toast';
 import { Redirect } from 'wouter';
+
+interface SystemLog {
+  id: string;
+  userId?: string;
+  userName?: string;
+  userRole?: 'resident' | 'official' | 'admin';
+  action: string;
+  affectedData?: string;
+  module?: string;
+  ipAddress?: string;
+  userAgent?: string;
+  metadata?: Record<string, any>;
+  timestamp: string;
+}
 
 export default function Logs() {
   const { user } = useAuth();
@@ -37,13 +51,36 @@ export default function Logs() {
     return <Redirect to="/dashboard" />;
   }
 
-  const filteredLogs = mockLogs.filter(log => {
-    const matchesSearch = log.action.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      log.userName.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      log.affectedData.toLowerCase().includes(searchQuery.toLowerCase());
-    const matchesRole = roleFilter === 'all' || log.role === roleFilter;
-    const matchesModule = moduleFilter === 'all' || log.module === moduleFilter;
-    return matchesSearch && matchesRole && matchesModule;
+  // Build query params
+  const queryParams = new URLSearchParams();
+  if (roleFilter !== 'all') queryParams.set('role', roleFilter);
+  if (moduleFilter !== 'all') queryParams.set('module', moduleFilter);
+  if (searchQuery) queryParams.set('search', searchQuery);
+  queryParams.set('limit', '1000'); // Get more logs
+
+  const { data: logs = [], isLoading, error, refetch } = useQuery<SystemLog[]>({
+    queryKey: ['system-logs', roleFilter, moduleFilter, searchQuery],
+    queryFn: async () => {
+      const res = await fetch(`/api/logs?${queryParams.toString()}`, {
+        credentials: 'include',
+      });
+      if (!res.ok) {
+        throw new Error('Failed to fetch logs');
+      }
+      return res.json();
+    },
+  });
+
+  // Client-side filtering for search (since API already filters)
+  const filteredLogs = logs.filter(log => {
+    if (!searchQuery) return true;
+    const searchLower = searchQuery.toLowerCase();
+    return (
+      log.action?.toLowerCase().includes(searchLower) ||
+      log.userName?.toLowerCase().includes(searchLower) ||
+      log.affectedData?.toLowerCase().includes(searchLower) ||
+      log.module?.toLowerCase().includes(searchLower)
+    );
   });
 
   const handleExport = (format: 'csv' | 'pdf') => {
@@ -53,7 +90,7 @@ export default function Logs() {
     });
   };
 
-  const modules = Array.from(new Set(mockLogs.map(l => l.module)));
+  const modules = Array.from(new Set(logs.map(l => l.module).filter(Boolean)));
 
   return (
     <AppLayout>
@@ -83,7 +120,7 @@ export default function Logs() {
                   <FileText className="w-5 h-5 text-primary" />
                 </div>
                 <div>
-                  <p className="text-xl font-bold">{mockLogs.length}</p>
+                  <p className="text-xl font-bold">{logs.length}</p>
                   <p className="text-xs text-muted-foreground">Total Entries</p>
                 </div>
               </div>
@@ -96,7 +133,7 @@ export default function Logs() {
                   <User className="w-5 h-5 text-chart-2" />
                 </div>
                 <div>
-                  <p className="text-xl font-bold">{mockLogs.filter(l => l.role === 'admin').length}</p>
+                  <p className="text-xl font-bold">{logs.filter(l => l.userRole === 'admin').length}</p>
                   <p className="text-xs text-muted-foreground">Admin Actions</p>
                 </div>
               </div>
@@ -109,7 +146,7 @@ export default function Logs() {
                   <User className="w-5 h-5 text-chart-3" />
                 </div>
                 <div>
-                  <p className="text-xl font-bold">{mockLogs.filter(l => l.role === 'official').length}</p>
+                  <p className="text-xl font-bold">{logs.filter(l => l.userRole === 'official').length}</p>
                   <p className="text-xs text-muted-foreground">Official Actions</p>
                 </div>
               </div>
@@ -170,51 +207,75 @@ export default function Logs() {
             </div>
           </CardHeader>
           <CardContent>
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Timestamp</TableHead>
-                  <TableHead>User</TableHead>
-                  <TableHead>Role</TableHead>
-                  <TableHead>Action</TableHead>
-                  <TableHead>Module</TableHead>
-                  <TableHead>Details</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {filteredLogs.length > 0 ? (
-                  filteredLogs.map(log => (
-                    <TableRow key={log.id} data-testid={`log-row-${log.id}`}>
-                      <TableCell className="font-mono text-xs whitespace-nowrap">
-                        {format(new Date(log.timestamp), 'MMM d, yyyy HH:mm')}
-                      </TableCell>
-                      <TableCell className="font-medium">{log.userName}</TableCell>
-                      <TableCell>
-                        <Badge variant="outline" className="capitalize text-xs">
-                          {log.role}
-                        </Badge>
-                      </TableCell>
-                      <TableCell>{log.action}</TableCell>
-                      <TableCell>
-                        <Badge variant="secondary" className="text-xs">
-                          {log.module}
-                        </Badge>
-                      </TableCell>
-                      <TableCell className="text-sm text-muted-foreground max-w-[200px] truncate">
-                        {log.affectedData}
+            {isLoading ? (
+              <div className="text-center py-12 text-muted-foreground">
+                <Loader2 className="w-8 h-8 mx-auto mb-3 animate-spin" />
+                <p className="font-medium">Loading logs...</p>
+              </div>
+            ) : error ? (
+              <div className="text-center py-12 text-muted-foreground">
+                <Filter className="w-12 h-12 mx-auto mb-3 opacity-50" />
+                <p className="font-medium text-destructive">Error loading logs</p>
+                <p className="text-sm mb-4">{error instanceof Error ? error.message : 'Unknown error'}</p>
+                <Button variant="outline" onClick={() => refetch()}>
+                  Try Again
+                </Button>
+              </div>
+            ) : (
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Timestamp</TableHead>
+                    <TableHead>User</TableHead>
+                    <TableHead>Role</TableHead>
+                    <TableHead>Action</TableHead>
+                    <TableHead>Module</TableHead>
+                    <TableHead>Details</TableHead>
+                    <TableHead>IP Address</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {filteredLogs.length > 0 ? (
+                    filteredLogs.map(log => (
+                      <TableRow key={log.id} data-testid={`log-row-${log.id}`}>
+                        <TableCell className="font-mono text-xs whitespace-nowrap">
+                          {format(new Date(log.timestamp), 'MMM d, yyyy HH:mm')}
+                        </TableCell>
+                        <TableCell className="font-medium">{log.userName || 'System'}</TableCell>
+                        <TableCell>
+                          {log.userRole && (
+                            <Badge variant="outline" className="capitalize text-xs">
+                              {log.userRole}
+                            </Badge>
+                          )}
+                        </TableCell>
+                        <TableCell>{log.action}</TableCell>
+                        <TableCell>
+                          {log.module && (
+                            <Badge variant="secondary" className="text-xs">
+                              {log.module}
+                            </Badge>
+                          )}
+                        </TableCell>
+                        <TableCell className="text-sm text-muted-foreground max-w-[200px] truncate" title={log.affectedData || ''}>
+                          {log.affectedData || '-'}
+                        </TableCell>
+                        <TableCell className="font-mono text-xs text-muted-foreground">
+                          {log.ipAddress || '-'}
+                        </TableCell>
+                      </TableRow>
+                    ))
+                  ) : (
+                    <TableRow>
+                      <TableCell colSpan={7} className="text-center py-8 text-muted-foreground">
+                        <Filter className="w-12 h-12 mx-auto mb-3 opacity-50" />
+                        <p>No logs found matching your filters</p>
                       </TableCell>
                     </TableRow>
-                  ))
-                ) : (
-                  <TableRow>
-                    <TableCell colSpan={6} className="text-center py-8 text-muted-foreground">
-                      <Filter className="w-12 h-12 mx-auto mb-3 opacity-50" />
-                      <p>No logs found matching your filters</p>
-                    </TableCell>
-                  </TableRow>
-                )}
-              </TableBody>
-            </Table>
+                  )}
+                </TableBody>
+              </Table>
+            )}
           </CardContent>
         </Card>
       </div>

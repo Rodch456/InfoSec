@@ -1,7 +1,8 @@
 import { useState } from 'react';
+import { useQuery } from '@tanstack/react-query';
 import { AppLayout } from '@/components/layout/AppLayout';
 import { useAuth } from '@/lib/authContext';
-import { mockReports, statusLabels, priorityLabels, categories } from '@/lib/mockData';
+import { statusLabels, priorityLabels, categories } from '@/lib/mockData';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -14,9 +15,23 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { Link } from 'wouter';
-import { Search, Filter, Plus, MapPin, Calendar, User, ArrowRight } from 'lucide-react';
+import { Search, Filter, Plus, MapPin, Calendar, User, ArrowRight, Loader2, RefreshCw } from 'lucide-react';
 import { format } from 'date-fns';
 import { cn } from '@/lib/utils';
+
+interface Report {
+  id: string;
+  category: string;
+  description: string;
+  priority: 'low' | 'medium' | 'high' | 'critical';
+  location: string;
+  status: 'submitted' | 'reviewed' | 'in_progress' | 'validation' | 'resolved';
+  images: string[];
+  submittedBy: string;
+  submittedAt: string;
+  updatedAt: string;
+  submitterName?: string;
+}
 
 export default function Reports() {
   const { user } = useAuth();
@@ -27,11 +42,26 @@ export default function Reports() {
 
   if (!user) return null;
 
-  const baseReports = user.role === 'resident'
-    ? mockReports.filter(r => r.submittedBy === user.name)
-    : mockReports;
+  // Fetch reports based on user role
+  const reportsUrl = user.role === 'resident' 
+    ? `/api/reports/user/${user.id}` 
+    : '/api/reports';
 
-  const filteredReports = baseReports.filter(report => {
+  const { data: reports = [], isLoading, error, refetch } = useQuery<Report[]>({
+    queryKey: ['reports', user.id, user.role],
+    queryFn: async () => {
+      const res = await fetch(reportsUrl, {
+        credentials: 'include',
+      });
+      if (!res.ok) {
+        throw new Error('Failed to fetch reports');
+      }
+      const data = await res.json();
+      return Array.isArray(data) ? data : [];
+    },
+  });
+
+  const filteredReports = reports.filter(report => {
     const matchesSearch = report.description.toLowerCase().includes(searchQuery.toLowerCase()) ||
       report.id.toLowerCase().includes(searchQuery.toLowerCase()) ||
       report.location.toLowerCase().includes(searchQuery.toLowerCase());
@@ -53,14 +83,27 @@ export default function Reports() {
               {user.role === 'resident' ? 'Track your submitted incident reports' : 'Manage and review incident reports'}
             </p>
           </div>
-          {user.role === 'resident' && (
-            <Link href="/reports/new">
-              <Button data-testid="button-new-report">
-                <Plus className="w-4 h-4 mr-2" />
-                New Report
+          <div className="flex gap-2">
+            {user.role !== 'resident' && (
+              <Button 
+                variant="outline" 
+                onClick={() => refetch()}
+                disabled={isLoading}
+                data-testid="button-refresh"
+              >
+                <RefreshCw className={cn("w-4 h-4 mr-2", isLoading && "animate-spin")} />
+                Refresh
               </Button>
-            </Link>
-          )}
+            )}
+            {user.role === 'resident' && (
+              <Link href="/reports/new">
+                <Button data-testid="button-new-report">
+                  <Plus className="w-4 h-4 mr-2" />
+                  New Report
+                </Button>
+              </Link>
+            )}
+          </div>
         </div>
 
         <Card>
@@ -117,8 +160,23 @@ export default function Reports() {
             </div>
           </CardHeader>
           <CardContent>
-            <div className="space-y-3">
-              {filteredReports.length > 0 ? (
+            {isLoading ? (
+              <div className="text-center py-12 text-muted-foreground">
+                <Loader2 className="w-8 h-8 mx-auto mb-3 animate-spin" />
+                <p className="font-medium">Loading reports...</p>
+              </div>
+            ) : error ? (
+              <div className="text-center py-12 text-muted-foreground">
+                <Filter className="w-12 h-12 mx-auto mb-3 opacity-50" />
+                <p className="font-medium text-destructive">Error loading reports</p>
+                <p className="text-sm mb-4">{error instanceof Error ? error.message : 'Unknown error'}</p>
+                <Button variant="outline" onClick={() => refetch()}>
+                  Try Again
+                </Button>
+              </div>
+            ) : (
+              <div className="space-y-3">
+                {filteredReports.length > 0 ? (
                 filteredReports.map(report => {
                   const statusClass = {
                     submitted: 'status-submitted',
@@ -161,12 +219,14 @@ export default function Reports() {
                             </span>
                             <span className="flex items-center gap-1">
                               <Calendar className="w-3 h-3" />
-                              {format(new Date(report.submittedAt), 'MMM d, yyyy')}
+                              {report.submittedAt 
+                                ? format(new Date(report.submittedAt), 'MMM d, yyyy')
+                                : 'N/A'}
                             </span>
                             {user.role !== 'resident' && (
                               <span className="flex items-center gap-1">
                                 <User className="w-3 h-3" />
-                                {report.submittedBy}
+                                {report.submitterName || report.submittedBy}
                               </span>
                             )}
                           </div>
@@ -188,7 +248,8 @@ export default function Reports() {
                   <p className="text-sm">Try adjusting your filters or search query</p>
                 </div>
               )}
-            </div>
+              </div>
+            )}
           </CardContent>
         </Card>
       </div>

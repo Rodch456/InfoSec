@@ -1,7 +1,8 @@
 import { useState } from 'react';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { AppLayout } from '@/components/layout/AppLayout';
 import { useAuth } from '@/lib/authContext';
-import { mockReports, statusLabels, priorityLabels } from '@/lib/mockData';
+import { statusLabels, priorityLabels } from '@/lib/mockData';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -24,32 +25,105 @@ import {
   Send,
   Camera,
   X,
+  Loader2,
 } from 'lucide-react';
 import { format } from 'date-fns';
 import { cn } from '@/lib/utils';
 import { useToast } from '@/hooks/use-toast';
 
+interface Report {
+  id: string;
+  category: string;
+  description: string;
+  priority: 'low' | 'medium' | 'high' | 'critical';
+  location: string;
+  status: 'submitted' | 'reviewed' | 'in_progress' | 'validation' | 'resolved';
+  images: string[];
+  additionalInfo?: string;
+  additionalInfoImages?: string[];
+  adminFeedback?: string;
+  submittedBy: string;
+  submittedAt: string;
+  updatedAt: string;
+  submitterName?: string;
+}
+
+interface ReportMessage {
+  id: string;
+  reportId: string;
+  senderId: string;
+  senderRole: 'resident' | 'official' | 'admin';
+  message: string;
+  images: string[];
+  createdAt: string;
+  senderName?: string;
+}
+
 export default function ReportDetail() {
   const { user } = useAuth();
   const [, params] = useRoute('/reports/:id');
   const { toast } = useToast();
+  const queryClient = useQueryClient();
 
   const [newStatus, setNewStatus] = useState('');
   const [inquiry, setInquiry] = useState('');
   const [response, setResponse] = useState('');
   const [responseImages, setResponseImages] = useState<string[]>([]);
 
+  // Fetch report from API
+  const { data: report, isLoading, error } = useQuery<Report>({
+    queryKey: ['report', params?.id],
+    queryFn: async () => {
+      if (!params?.id) throw new Error('Report ID required');
+      const res = await fetch(`/api/reports/${params.id}`, {
+        credentials: 'include',
+      });
+      if (!res.ok) {
+        if (res.status === 404) throw new Error('Report not found');
+        throw new Error('Failed to fetch report');
+      }
+      return res.json();
+    },
+    enabled: !!params?.id,
+  });
+
+  // Fetch messages for the report
+  const { data: messages = [], refetch: refetchMessages } = useQuery<ReportMessage[]>({
+    queryKey: ['report-messages', params?.id],
+    queryFn: async () => {
+      if (!params?.id) throw new Error('Report ID required');
+      const res = await fetch(`/api/reports/${params.id}/messages`, {
+        credentials: 'include',
+      });
+      if (!res.ok) {
+        if (res.status === 404) return [];
+        throw new Error('Failed to fetch messages');
+      }
+      return res.json();
+    },
+    enabled: !!params?.id,
+  });
+
   if (!user || !params) return null;
 
-  const report = mockReports.find(r => r.id === params.id);
-
-  if (!report) {
+  if (isLoading) {
     return (
       <AppLayout>
         <div className="text-center py-12">
-          <p className="text-muted-foreground">Report not found</p>
+          <Loader2 className="w-8 h-8 mx-auto mb-3 animate-spin" />
+          <p className="text-muted-foreground">Loading report...</p>
+        </div>
+      </AppLayout>
+    );
+  }
+
+  if (error || !report) {
+    return (
+      <AppLayout>
+        <div className="text-center py-12">
+          <p className="text-muted-foreground">{error instanceof Error ? error.message : 'Report not found'}</p>
           <Link href="/reports">
-            <Button variant="link">Back to Reports</Button>
+            <Button variant="link" className="mt-4">Back to Reports</Button>
           </Link>
         </div>
       </AppLayout>
@@ -72,25 +146,83 @@ export default function ReportDetail() {
   }[report.priority];
 
   const canUpdateStatus = user.role === 'admin' || user.role === 'official';
-  const canRequestInfo = user.role === 'admin';
-  const canRespond = user.role === 'resident' && report.submittedBy === user.name;
+  const canRequestInfo = user.role === 'admin' || user.role === 'official';
+  const canRespond = user.role === 'resident' && report.submittedBy === user.id;
 
-  const handleStatusUpdate = () => {
-    if (!newStatus) return;
-    toast({
-      title: 'Status updated',
-      description: `Report status changed to ${statusLabels[newStatus as keyof typeof statusLabels]}`,
-    });
-    setNewStatus('');
+  const handleStatusUpdate = async () => {
+    if (!newStatus || !report) return;
+
+    try {
+      const res = await fetch(`/api/reports/${report.id}`, {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        credentials: 'include',
+        body: JSON.stringify({ status: newStatus }),
+      });
+
+      if (!res.ok) {
+        throw new Error('Failed to update status');
+      }
+
+      // Invalidate queries to refresh data
+      await queryClient.invalidateQueries({ queryKey: ['report', report.id] });
+      await queryClient.invalidateQueries({ queryKey: ['reports'] });
+
+      toast({
+        title: 'Status updated',
+        description: `Report status changed to ${statusLabels[newStatus as keyof typeof statusLabels]}`,
+      });
+      setNewStatus('');
+    } catch (error) {
+      toast({
+        title: 'Error',
+        description: 'Failed to update status. Please try again.',
+        variant: 'destructive',
+      });
+    }
   };
 
-  const handleSendInquiry = () => {
+  const handleSendInquiry = async () => {
     if (!inquiry.trim()) return;
-    toast({
-      title: 'Inquiry sent',
-      description: 'The resident will be notified to provide more information.',
-    });
-    setInquiry('');
+
+    try {
+      const res = await fetch(`/api/reports/${report?.id}`, {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        credentials: 'include',
+        body: JSON.stringify({
+          status: 'validation',
+          adminFeedback: inquiry,
+          senderRole: user.role,
+        }),
+      });
+
+      if (!res.ok) {
+        const errorData = await res.json().catch(() => ({}));
+        throw new Error(errorData.error || `Failed to send inquiry: ${res.statusText}`);
+      }
+
+      await queryClient.invalidateQueries({ queryKey: ['report', report?.id] });
+      await refetchMessages();
+
+      toast({
+        title: 'Inquiry sent',
+        description: 'The resident will be notified to provide more information.',
+      });
+      setInquiry('');
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : 'Failed to send inquiry.';
+      console.error('Error sending inquiry:', error);
+      toast({
+        title: 'Error',
+        description: errorMessage,
+        variant: 'destructive',
+      });
+    }
   };
 
   const handleCaptureImage = () => {
@@ -106,14 +238,47 @@ export default function ReportDetail() {
     setResponseImages([...responseImages, mockImage]);
   };
 
-  const handleSubmitResponse = () => {
+  const handleSubmitResponse = async () => {
     if (!response.trim()) return;
-    toast({
-      title: 'Response submitted',
-      description: 'Your additional information has been sent.',
-    });
-    setResponse('');
-    setResponseImages([]);
+
+    try {
+      const res = await fetch(`/api/reports/${report?.id}`, {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        credentials: 'include',
+        body: JSON.stringify({
+          status: 'reviewed',
+          additionalInfo: response,
+          additionalInfoImages: responseImages,
+          senderRole: user.role,
+        }),
+      });
+
+      if (!res.ok) {
+        const errorData = await res.json().catch(() => ({}));
+        throw new Error(errorData.error || `Failed to submit response: ${res.statusText}`);
+      }
+
+      await queryClient.invalidateQueries({ queryKey: ['report', report?.id] });
+      await refetchMessages();
+
+      toast({
+        title: 'Response submitted',
+        description: 'Your additional information has been sent.',
+      });
+      setResponse('');
+      setResponseImages([]);
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : 'Failed to submit response.';
+      console.error('Error submitting response:', error);
+      toast({
+        title: 'Error',
+        description: errorMessage,
+        variant: 'destructive',
+      });
+    }
   };
 
   return (
@@ -146,6 +311,23 @@ export default function ReportDetail() {
               <CardContent className="space-y-4">
                 <p className="text-sm leading-relaxed">{report.description}</p>
 
+                {Array.isArray(report.images) && report.images.length > 0 && (
+                  <div className="pt-4 border-t border-border">
+                    <p className="text-sm font-medium mb-3">Photo Evidence</p>
+                    <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+                      {report.images.map((img, idx) => (
+                        <div key={idx} className="relative aspect-video rounded-lg overflow-hidden border border-border">
+                          <img
+                            src={img}
+                            alt={`Evidence ${idx + 1}`}
+                            className="w-full h-full object-cover"
+                          />
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
                 <div className="grid grid-cols-2 gap-4 pt-4 border-t border-border">
                   <div className="flex items-center gap-2 text-sm">
                     <MapPin className="w-4 h-4 text-muted-foreground" />
@@ -153,7 +335,7 @@ export default function ReportDetail() {
                   </div>
                   <div className="flex items-center gap-2 text-sm">
                     <User className="w-4 h-4 text-muted-foreground" />
-                    <span>{report.submittedBy}</span>
+                    <span>{report.submitterName || report.submittedBy}</span>
                   </div>
                   <div className="flex items-center gap-2 text-sm">
                     <Calendar className="w-4 h-4 text-muted-foreground" />
@@ -166,6 +348,114 @@ export default function ReportDetail() {
                 </div>
               </CardContent>
             </Card>
+
+            {/* Conversation Thread */}
+            {messages.length > 0 && (
+              <Card>
+                <CardHeader>
+                  <CardTitle className="text-lg flex items-center gap-2">
+                    <MessageSquare className="w-5 h-5" />
+                    Conversation History
+                  </CardTitle>
+                  <CardDescription>All requests and responses between admin and resident</CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <div className="space-y-4">
+                    {messages.map((msg) => {
+                      const isAdmin = msg.senderRole === 'admin' || msg.senderRole === 'official';
+                      const isFromCurrentUser = msg.senderId === user.id;
+                      
+                      return (
+                        <div
+                          key={msg.id}
+                          className={cn(
+                            "p-4 rounded-lg border",
+                            isAdmin
+                              ? "bg-blue-50/50 border-blue-200 dark:bg-blue-950/20 dark:border-blue-800"
+                              : "bg-green-50/50 border-green-200 dark:bg-green-950/20 dark:border-green-800"
+                          )}
+                        >
+                          <div className="flex items-start justify-between gap-3 mb-2">
+                            <div className="flex items-center gap-2">
+                              <Badge variant={isAdmin ? "default" : "secondary"}>
+                                {isAdmin ? (msg.senderRole === 'admin' ? 'Admin' : 'Official') : 'Resident'}
+                              </Badge>
+                              <span className="text-sm font-medium">{msg.senderName || msg.senderId}</span>
+                            </div>
+                            <span className="text-xs text-muted-foreground">
+                              {format(new Date(msg.createdAt), 'MMM d, yyyy h:mm a')}
+                            </span>
+                          </div>
+                          <p className="text-sm leading-relaxed mb-3">{msg.message}</p>
+                          {Array.isArray(msg.images) && msg.images.length > 0 && (
+                            <div className="grid grid-cols-2 md:grid-cols-3 gap-2 mt-3 pt-3 border-t border-border">
+                              {msg.images.map((img, idx) => (
+                                <div key={idx} className="relative aspect-video rounded-lg overflow-hidden border border-border">
+                                  <img
+                                    src={img}
+                                    alt={`Attachment ${idx + 1}`}
+                                    className="w-full h-full object-cover"
+                                  />
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                </CardContent>
+              </Card>
+            )}
+
+            {/* Show admin feedback to residents if exists and no messages yet */}
+            {canRespond && report.adminFeedback && messages.length === 0 && (
+              <Card>
+                <CardHeader>
+                  <CardTitle className="text-lg flex items-center gap-2">
+                    <MessageSquare className="w-5 h-5" />
+                    Request for Additional Information
+                  </CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <div className="p-4 rounded-lg border bg-blue-50/50 border-blue-200 dark:bg-blue-950/20 dark:border-blue-800">
+                    <p className="text-sm leading-relaxed">{report.adminFeedback}</p>
+                  </div>
+                </CardContent>
+              </Card>
+            )}
+
+            {/* Show additional info to admins if exists and no messages yet */}
+            {canRequestInfo && report.additionalInfo && messages.length === 0 && (
+              <Card>
+                <CardHeader>
+                  <CardTitle className="text-lg flex items-center gap-2">
+                    <MessageSquare className="w-5 h-5" />
+                    Additional Information from Resident
+                  </CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <div className="space-y-3">
+                    <div className="p-4 rounded-lg border bg-green-50/50 border-green-200 dark:bg-green-950/20 dark:border-green-800">
+                      <p className="text-sm leading-relaxed">{report.additionalInfo}</p>
+                    </div>
+                    {Array.isArray(report.additionalInfoImages) && report.additionalInfoImages.length > 0 && (
+                      <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
+                        {report.additionalInfoImages.map((img, idx) => (
+                          <div key={idx} className="relative aspect-video rounded-lg overflow-hidden border border-border">
+                            <img
+                              src={img}
+                              alt={`Attachment ${idx + 1}`}
+                              className="w-full h-full object-cover"
+                            />
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                </CardContent>
+              </Card>
+            )}
 
             {canUpdateStatus && (
               <Card>
@@ -314,7 +604,7 @@ export default function ReportDetail() {
                 </div>
                 <div className="flex justify-between">
                   <span className="text-muted-foreground">Images</span>
-                  <span>{report.images.length} attached</span>
+                  <span>{Array.isArray(report.images) ? report.images.length : 0} attached</span>
                 </div>
               </CardContent>
             </Card>

@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
 import { AppLayout } from '@/components/layout/AppLayout';
 import { useAuth } from '@/lib/authContext';
 import { categories } from '@/lib/mockData';
@@ -22,6 +23,7 @@ export default function NewReport() {
   const { user } = useAuth();
   const [, setLocation] = useLocation();
   const { toast } = useToast();
+  const queryClient = useQueryClient();
 
   const [category, setCategory] = useState('');
   const [description, setDescription] = useState('');
@@ -55,7 +57,7 @@ export default function NewReport() {
     setImages(images.filter((_, i) => i !== index));
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
     if (!category || !description || !priority || !location) {
@@ -69,13 +71,58 @@ export default function NewReport() {
 
     setIsSubmitting(true);
 
-    setTimeout(() => {
+    try {
+      const response = await fetch('/api/reports', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        credentials: 'include',
+        body: JSON.stringify({
+          category,
+          description,
+          priority,
+          location,
+          images,
+        }),
+      });
+
+      if (!response.ok) {
+        let errorMessage = 'Failed to submit report';
+        try {
+          const error = await response.json();
+          errorMessage = error.error || errorMessage;
+        } catch (e) {
+          errorMessage = `Server error: ${response.status} ${response.statusText}`;
+        }
+        console.error('Report submission failed:', errorMessage, response.status);
+        toast({
+          title: 'Submission failed',
+          description: errorMessage,
+          variant: 'destructive',
+        });
+        setIsSubmitting(false);
+        return;
+      }
+
+      // Invalidate and refetch reports to show the new report
+      await queryClient.invalidateQueries({ queryKey: ['reports'] });
+      
       toast({
         title: 'Report submitted!',
         description: 'Your incident report has been submitted successfully.',
       });
       setLocation('/reports');
-    }, 1500);
+    } catch (error) {
+      console.error('Report submission error:', error);
+      const errorMessage = error instanceof Error ? error.message : 'Failed to submit report. Please try again.';
+      toast({
+        title: 'Error',
+        description: errorMessage,
+        variant: 'destructive',
+      });
+      setIsSubmitting(false);
+    }
   };
 
   return (

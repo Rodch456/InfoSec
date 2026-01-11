@@ -1,7 +1,7 @@
 import { useState } from 'react';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { AppLayout } from '@/components/layout/AppLayout';
 import { useAuth } from '@/lib/authContext';
-import { mockMemos } from '@/lib/mockData';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -24,17 +24,33 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { Search, ScrollText, FileText, Calendar, User, Plus, CheckCircle, XCircle, Clock } from 'lucide-react';
+import { Search, ScrollText, FileText, Calendar, User, Plus, CheckCircle, XCircle, Clock, Loader2 } from 'lucide-react';
 import { format } from 'date-fns';
 import { cn } from '@/lib/utils';
 import { useToast } from '@/hooks/use-toast';
 
+interface Memo {
+  id: string;
+  title: string;
+  description: string;
+  category: 'memo' | 'ordinance';
+  status: 'pending' | 'approved' | 'rejected';
+  effectiveDate: string | null;
+  fileUrl: string | null;
+  issuedBy: string;
+  createdAt: string;
+  updatedAt: string;
+  issuerName?: string | null;
+}
+
 export default function Memos() {
   const { user } = useAuth();
   const { toast } = useToast();
+  const queryClient = useQueryClient();
   const [searchQuery, setSearchQuery] = useState('');
   const [activeTab, setActiveTab] = useState('all');
   const [isCreateOpen, setIsCreateOpen] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
   const [newMemo, setNewMemo] = useState({
     title: '',
     description: '',
@@ -47,11 +63,27 @@ export default function Memos() {
   const canCreate = user.role === 'admin' || user.role === 'official';
   const canApprove = user.role === 'admin';
 
-  const displayMemos = user.role === 'resident'
-    ? mockMemos.filter(m => m.status === 'approved')
-    : mockMemos;
+  // Fetch memos from API
+  const { data: memos = [], isLoading, error, refetch } = useQuery<Memo[]>({
+    queryKey: ['memos', user.role],
+    queryFn: async () => {
+      const params = new URLSearchParams();
+      if (user.role === 'resident') {
+        params.set('showOnlyApproved', 'true');
+      }
+      
+      const res = await fetch(`/api/memos?${params.toString()}`, {
+        credentials: 'include',
+      });
+      if (!res.ok) {
+        throw new Error('Failed to fetch memos');
+      }
+      return res.json();
+    },
+  });
 
-  const filteredMemos = displayMemos.filter(memo => {
+  // Filter memos based on search and tab
+  const filteredMemos = memos.filter(memo => {
     const matchesSearch = memo.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
       memo.description.toLowerCase().includes(searchQuery.toLowerCase());
     const matchesTab = activeTab === 'all' ||
@@ -61,7 +93,7 @@ export default function Memos() {
     return matchesSearch && matchesTab;
   });
 
-  const handleCreate = () => {
+  const handleCreate = async () => {
     if (!newMemo.title || !newMemo.description || !newMemo.category) {
       toast({
         title: 'Missing information',
@@ -71,23 +103,113 @@ export default function Memos() {
       return;
     }
 
-    const action = user.role === 'admin' ? 'published' : 'submitted for approval';
-    toast({
-      title: `${newMemo.category === 'memo' ? 'Memo' : 'Ordinance'} ${action}`,
-      description: user.role === 'admin'
-        ? 'The document is now visible to all residents.'
-        : 'An admin will review your submission.',
-    });
-    setIsCreateOpen(false);
-    setNewMemo({ title: '', description: '', category: '', effectiveDate: '' });
+    setIsSubmitting(true);
+    try {
+      const res = await fetch('/api/memos', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        credentials: 'include',
+        body: JSON.stringify({
+          title: newMemo.title,
+          description: newMemo.description,
+          category: newMemo.category,
+          effectiveDate: newMemo.effectiveDate || null,
+          status: user.role === 'admin' ? 'approved' : 'pending',
+        }),
+      });
+
+      if (!res.ok) {
+        const errorData = await res.json().catch(() => ({}));
+        throw new Error(errorData.error || 'Failed to create memo');
+      }
+
+      await queryClient.invalidateQueries({ queryKey: ['memos'] });
+
+      const action = user.role === 'admin' ? 'published' : 'submitted for approval';
+      toast({
+        title: `${newMemo.category === 'memo' ? 'Memo' : 'Ordinance'} ${action}`,
+        description: user.role === 'admin'
+          ? 'The document is now visible to all residents.'
+          : 'An admin will review your submission.',
+      });
+      setIsCreateOpen(false);
+      setNewMemo({ title: '', description: '', category: '', effectiveDate: '' });
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : 'Failed to create memo';
+      toast({
+        title: 'Error',
+        description: errorMessage,
+        variant: 'destructive',
+      });
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
-  const handleApprove = (id: string) => {
-    toast({ title: 'Document approved', description: 'The document is now visible to residents.' });
+  const handleApprove = async (id: string) => {
+    try {
+      const res = await fetch(`/api/memos/${id}`, {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        credentials: 'include',
+        body: JSON.stringify({ status: 'approved' }),
+      });
+
+      if (!res.ok) {
+        const errorData = await res.json().catch(() => ({}));
+        throw new Error(errorData.error || 'Failed to approve memo');
+      }
+
+      await queryClient.invalidateQueries({ queryKey: ['memos'] });
+
+      toast({ 
+        title: 'Document approved', 
+        description: 'The document is now visible to residents.' 
+      });
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : 'Failed to approve memo';
+      toast({
+        title: 'Error',
+        description: errorMessage,
+        variant: 'destructive',
+      });
+    }
   };
 
-  const handleReject = (id: string) => {
-    toast({ title: 'Document rejected', description: 'The submitter will be notified.' });
+  const handleReject = async (id: string) => {
+    try {
+      const res = await fetch(`/api/memos/${id}`, {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        credentials: 'include',
+        body: JSON.stringify({ status: 'rejected' }),
+      });
+
+      if (!res.ok) {
+        const errorData = await res.json().catch(() => ({}));
+        throw new Error(errorData.error || 'Failed to reject memo');
+      }
+
+      await queryClient.invalidateQueries({ queryKey: ['memos'] });
+
+      toast({ 
+        title: 'Document rejected', 
+        description: 'The submitter will be notified.' 
+      });
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : 'Failed to reject memo';
+      toast({
+        title: 'Error',
+        description: errorMessage,
+        variant: 'destructive',
+      });
+    }
   };
 
   return (
@@ -169,8 +291,12 @@ export default function Memos() {
                     <Button variant="outline" onClick={() => setIsCreateOpen(false)}>
                       Cancel
                     </Button>
-                    <Button onClick={handleCreate} data-testid="button-submit-memo">
-                      {user.role === 'admin' ? 'Publish' : 'Submit Request'}
+                    <Button onClick={handleCreate} disabled={isSubmitting} data-testid="button-submit-memo">
+                      {isSubmitting ? (
+                        <>Submitting...</>
+                      ) : (
+                        <>{user.role === 'admin' ? 'Publish' : 'Submit Request'}</>
+                      )}
                     </Button>
                   </div>
                 </div>
@@ -203,9 +329,24 @@ export default function Memos() {
             </div>
           </CardHeader>
           <CardContent>
-            <div className="space-y-4">
-              {filteredMemos.length > 0 ? (
-                filteredMemos.map(memo => {
+            {isLoading ? (
+              <div className="text-center py-12 text-muted-foreground">
+                <Loader2 className="w-8 h-8 mx-auto mb-3 animate-spin" />
+                <p className="font-medium">Loading memos...</p>
+              </div>
+            ) : error ? (
+              <div className="text-center py-12 text-muted-foreground">
+                <ScrollText className="w-12 h-12 mx-auto mb-3 opacity-50" />
+                <p className="font-medium text-destructive">Error loading memos</p>
+                <p className="text-sm mb-4">{error instanceof Error ? error.message : 'Unknown error'}</p>
+                <Button variant="outline" onClick={() => refetch()}>
+                  Try Again
+                </Button>
+              </div>
+            ) : (
+              <div className="space-y-4">
+                {filteredMemos.length > 0 ? (
+                  filteredMemos.map(memo => {
                   const Icon = memo.category === 'memo' ? FileText : ScrollText;
                   const statusColor = {
                     approved: 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400',
@@ -239,13 +380,15 @@ export default function Memos() {
                             {memo.description}
                           </p>
                           <div className="flex items-center gap-4 text-xs text-muted-foreground">
-                            <span className="flex items-center gap-1">
-                              <Calendar className="w-3 h-3" />
-                              Effective: {format(new Date(memo.effectiveDate), 'MMM d, yyyy')}
-                            </span>
+                            {memo.effectiveDate && (
+                              <span className="flex items-center gap-1">
+                                <Calendar className="w-3 h-3" />
+                                Effective: {format(new Date(memo.effectiveDate), 'MMM d, yyyy')}
+                              </span>
+                            )}
                             <span className="flex items-center gap-1">
                               <User className="w-3 h-3" />
-                              {memo.issuedBy}
+                              {memo.issuerName || memo.issuedBy}
                             </span>
                           </div>
                         </div>
@@ -275,14 +418,15 @@ export default function Memos() {
                     </div>
                   );
                 })
-              ) : (
-                <div className="text-center py-12 text-muted-foreground">
-                  <ScrollText className="w-12 h-12 mx-auto mb-3 opacity-50" />
-                  <p className="font-medium">No documents found</p>
-                  <p className="text-sm">Try adjusting your search or filters</p>
-                </div>
-              )}
-            </div>
+                ) : (
+                  <div className="text-center py-12 text-muted-foreground">
+                    <ScrollText className="w-12 h-12 mx-auto mb-3 opacity-50" />
+                    <p className="font-medium">No documents found</p>
+                    <p className="text-sm">Try adjusting your search or filters</p>
+                  </div>
+                )}
+              </div>
+            )}
           </CardContent>
         </Card>
       </div>

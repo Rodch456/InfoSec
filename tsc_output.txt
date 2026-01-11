@@ -1,0 +1,23 @@
+
+> rest-express@1.0.0 check
+> tsc
+
+server/index.ts(20,7): error TS2687: All declarations of 'session' must have identical modifiers.
+server/index.ts(20,7): error TS2717: Subsequent property declarations must have the same type.  Property 'session' must be of type 'Session & Partial<SessionData>', but here has type 'any'.
+server/storage.ts(122,5): error TS2322: Type '{ id: string; category: string; description: string; priority: string; location: string; status: string; images: string[] | null; submittedBy: string; submittedAt: Date | null; updatedAt: Date | null; submitterName: string | null; }' is not assignable to type '{ id: string; status: string; location: string; description: string; priority: string; category: string; images: string[] | null; submittedBy: string; submittedAt: Date | null; updatedAt: Date | null; } & { ...; }'.
+  Type '{ id: string; category: string; description: string; priority: string; location: string; status: string; images: string[] | null; submittedBy: string; submittedAt: Date | null; updatedAt: Date | null; submitterName: string | null; }' is not assignable to type '{ submitterName?: string | undefined; }'.
+    Types of property 'submitterName' are incompatible.
+      Type 'string | null' is not assignable to type 'string | undefined'.
+        Type 'null' is not assignable to type 'string | undefined'.
+server/storage.ts(163,5): error TS2322: Type '{ id: string; category: string; description: string; priority: string; location: string; status: string; images: string[] | null; submittedBy: string; submittedAt: Date | null; updatedAt: Date | null; submitterName: string | null; }[]' is not assignable to type '({ id: string; status: string; location: string; description: string; priority: string; category: string; images: string[] | null; submittedBy: string; submittedAt: Date | null; updatedAt: Date | null; } & { ...; })[]'.
+  Type '{ id: string; category: string; description: string; priority: string; location: string; status: string; images: string[] | null; submittedBy: string; submittedAt: Date | null; updatedAt: Date | null; submitterName: string | null; }' is not assignable to type '{ id: string; status: string; location: string; description: string; priority: string; category: string; images: string[] | null; submittedBy: string; submittedAt: Date | null; updatedAt: Date | null; } & { ...; }'.
+    Type '{ id: string; category: string; description: string; priority: string; location: string; status: string; images: string[] | null; submittedBy: string; submittedAt: Date | null; updatedAt: Date | null; submitterName: string | null; }' is not assignable to type '{ submitterName?: string | undefined; }'.
+      Types of property 'submitterName' are incompatible.
+        Type 'string | null' is not assignable to type 'string | undefined'.
+          Type 'null' is not assignable to type 'string | undefined'.
+server/storage.ts(186,5): error TS2322: Type '{ id: string; category: string; description: string; priority: string; location: string; status: string; images: string[] | null; submittedBy: string; submittedAt: Date | null; updatedAt: Date | null; submitterName: string | null; }[]' is not assignable to type '({ id: string; status: string; location: string; description: string; priority: string; category: string; images: string[] | null; submittedBy: string; submittedAt: Date | null; updatedAt: Date | null; } & { ...; })[]'.
+  Type '{ id: string; category: string; description: string; priority: string; location: string; status: string; images: string[] | null; submittedBy: string; submittedAt: Date | null; updatedAt: Date | null; submitterName: string | null; }' is not assignable to type '{ id: string; status: string; location: string; description: string; priority: string; category: string; images: string[] | null; submittedBy: string; submittedAt: Date | null; updatedAt: Date | null; } & { ...; }'.
+    Type '{ id: string; category: string; description: string; priority: string; location: string; status: string; images: string[] | null; submittedBy: string; submittedAt: Date | null; updatedAt: Date | null; submitterName: string | null; }' is not assignable to type '{ submitterName?: string | undefined; }'.
+      Types of property 'submitterName' are incompatible.
+        Type 'string | null' is not assignable to type 'string | undefined'.
+          Type 'null' is not assignable to type 'string | undefined'.
